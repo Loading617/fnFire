@@ -1,2 +1,2 @@
 # fnFire
-fn Keybinds for Windows
+Windows fn Keybinder
