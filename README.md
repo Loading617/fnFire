@@ -1,2 +1,2 @@
 # fnFire
-Windows fn Keybinder
+Windows Media fn Keybinder
