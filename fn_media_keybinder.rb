@@ -1,4 +1,21 @@
 require 'glimmer-dsl-swt'
+require 'ffi'
+
+class InputEvent < FFI::Struct
+  layout :tv_sec, :long,
+         :tv_usec, :long,
+         :type, :ushort,
+         :code, :ushort,
+         :value, :int
+end
+
+MEDIA_KEYS = {
+  164 => 'Play/Pause',
+  163 => 'Next Track',
+  165 => 'Previous Track',
+  115 => 'Volume Up',
+  114 => 'Volume Down'
+}
 
 class fnFire
   include Glimmer::UI::CustomShell
@@ -14,6 +31,8 @@ class fnFire
       'Volume Down' => 'Not set'
     }
     @log_output = ""
+    @running = true
+    start_fn_key_detection
   end
 
   shell {
@@ -74,6 +93,10 @@ class fnFire
       layout_data :fill, :fill, true, true
       text bind(self, :log_output)
     }
+
+    on_swt_close {
+      @running = false
+    }
   }
 
   def simulate_key_event
@@ -84,6 +107,45 @@ class fnFire
       @log_output += "Detected key #{pressed_key}, triggered: #{action}\n"
     else
       @log_output += "Detected key #{pressed_key}, no action bound\n"
+    end
+  end
+
+  def start_fn_key_detection
+    Thread.new do
+      input_devices = Dir["/dev/input/event*"]
+      readers = input_devices.map do |device|
+        begin
+          File.open(device, 'rb')
+        rescue Errno::EACCES
+          nil
+        end
+      end.compact
+
+      loop do
+        break unless @running
+
+        readers.each do |f|
+          begin
+            data = f.read(24)
+            next unless data && data.bytesize == 24
+
+            event = InputEvent.new(data)
+            if event[:type] == 1 && event[:value] == 1 # key down
+              if MEDIA_KEYS.key?(event[:code])
+                Glimmer::SWT::DisplayProxy.instance.async_exec do
+                  @log_output += "Auto-detected Fn key: #{MEDIA_KEYS[event[:code]]}\n"
+                end
+              end
+            end
+          rescue IOError, EOFError
+            next
+          end
+        end
+
+        sleep(0.05)
+      end
+
+      readers.each(&:close)
     end
   end
 end
